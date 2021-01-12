@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 from imutils import contours
 import imutils
+import pyzbar.pyzbar as pyzbar
 
 # 실행 시 전달 인자 처리
 parser = argparse.ArgumentParser(description='Program to read segment digits')
@@ -73,6 +74,29 @@ def four_point_transform(image, pts):
 # Digits가 포함된 영역을 찾는 함수 : 원래는 외곽선을 이용해서 해당 영역을 찾아야 하지만 임의로 사각 영역 설정
 # 향후 QR 코드 등을 영역에 부착하고 QR 코드의 중심점을 사각 영역의 꼭지점으로 설정할 예정
 def find_digits_area(image):
+    decoded = pyzbar.decode(image)
+
+    center = []
+    for d in decoded:
+        c_x = d.rect.left + d.rect.width / 2
+        c_y = d.rect.top + d.rect.height / 2
+        center.append([c_x, c_y])
+    center = np.array(center)
+
+    points = []
+    average = np.average(center, axis=0)
+    for d in decoded:
+        if (d.rect.left + d.rect.width / 2) < average[0] and (d.rect.top + d.rect.height / 2) < average[1]:
+            points.append(order_points(np.array([[d.polygon[0].x, d.polygon[0].y], [d.polygon[1].x, d.polygon[1].y], [d.polygon[2].x, d.polygon[2].y], [d.polygon[3].x, d.polygon[3].y]]))[2])
+        elif (d.rect.left + d.rect.width / 2) >= average[0] and (d.rect.top + d.rect.height / 2) < average[1]:
+            points.append(order_points(np.array([[d.polygon[0].x, d.polygon[0].y], [d.polygon[1].x, d.polygon[1].y], [d.polygon[2].x, d.polygon[2].y], [d.polygon[3].x, d.polygon[3].y]]))[3])
+        elif (d.rect.left + d.rect.width / 2) >= average[0] and (d.rect.top + d.rect.height / 2) >= average[1]:
+            points.append(order_points(np.array([[d.polygon[0].x, d.polygon[0].y], [d.polygon[1].x, d.polygon[1].y], [d.polygon[2].x, d.polygon[2].y], [d.polygon[3].x, d.polygon[3].y]]))[0])
+        else:
+            points.append(order_points(np.array([[d.polygon[0].x, d.polygon[0].y], [d.polygon[1].x, d.polygon[1].y], [d.polygon[2].x, d.polygon[2].y], [d.polygon[3].x, d.polygon[3].y]]))[1])
+    
+    digits_area = np.array(points)
+
     # digits_area = np.zeros((4, 1, 2))
 
     # (h, w, c) = image.shape
@@ -90,38 +114,38 @@ def find_digits_area(image):
     # digits_area[3][0][0] = w - 1
     # digits_area[3][0][1] = h - 1
 
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    # hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    lower_red_1 = (0, 100, 100)
-    upper_red_1 = (20, 255, 255)
+    # lower_red_1 = (0, 100, 100)
+    # upper_red_1 = (20, 255, 255)
 
-    mask_1 = cv2.inRange(hsv, lower_red_1, upper_red_1)
+    # mask_1 = cv2.inRange(hsv, lower_red_1, upper_red_1)
 
-    lower_red_2 = (160, 100, 100)
-    upper_red_2 = (180, 255, 255)
+    # lower_red_2 = (160, 100, 100)
+    # upper_red_2 = (180, 255, 255)
 
-    mask_2 = cv2.inRange(hsv, lower_red_2, upper_red_2)
+    # mask_2 = cv2.inRange(hsv, lower_red_2, upper_red_2)
 
-    result = cv2.bitwise_and(image, image, mask=(mask_1 | mask_2))
+    # result = cv2.bitwise_and(image, image, mask=(mask_1 | mask_2))
 
-    # Remove noises
-    kernel = np.ones((3, 3), np.int8)
-    result = cv2.erode(result, kernel, iterations=2)
-    result = cv2.dilate(result, kernel, iterations=2)
+    # # Remove noises
+    # kernel = np.ones((3, 3), np.int8)
+    # result = cv2.erode(result, kernel, iterations=2)
+    # result = cv2.dilate(result, kernel, iterations=2)
 
-    # Fill holes
-    result = cv2.dilate(result, kernel, iterations=2)
-    result = cv2.erode(result, kernel, iterations=2)
+    # # Fill holes
+    # result = cv2.dilate(result, kernel, iterations=2)
+    # result = cv2.erode(result, kernel, iterations=2)
     
-    result = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-    ret, labels, stats, centroids = cv2.connectedComponentsWithStats(result)
+    # result = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+    # ret, labels, stats, centroids = cv2.connectedComponentsWithStats(result)
 
-    digits_area = np.zeros((ret - 1, 1, 2))
+    # digits_area = np.zeros((ret - 1, 1, 2))
 
-    for i in range(1, ret):
-        cx, cy = centroids[i]
-        digits_area[i - 1][0][0] = cx
-        digits_area[i - 1][0][1] = cy
+    # for i in range(1, ret):
+    #     cx, cy = centroids[i]
+    #     digits_area[i - 1][0][0] = cx
+    #     digits_area[i - 1][0][1] = cy
 
     return digits_area
 
@@ -139,8 +163,10 @@ def get_image(path_to_capture='radius_1.jpg', action='radius', dil_num=5, offset
         while True:
             ret, image = capture.read()
             if ret:
-                digits_area = find_digits_area(image)
+                digits_area = find_digits_area(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
                 length_of_digit_area = len(digits_area)
+
+                # print(f'length_of_digit_area = {length_of_digit_area}')
 
                 if length_of_digit_area == 4:
                     image = four_point_transform(image=image, pts=digits_area.reshape(4, 2))
@@ -148,20 +174,22 @@ def get_image(path_to_capture='radius_1.jpg', action='radius', dil_num=5, offset
                     thresholded_image = get_thresholded_image(image=image, which=action, dilation_number=dil_num, threshold_offset=offset, debug_message=False)
                     cv2.imshow(title, cv2.hconcat([image, cv2.cvtColor(thresholded_image, cv2.COLOR_GRAY2BGR)]))
                     cv2.resizeWindow(title, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) * 0.5), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) * 0.25))
-                else:
-                    cv2.imshow(title, image)
-                    cv2.resizeWindow(title, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) * 0.5), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) * 0.5))
+                # else:
+                #     cv2.imshow(title, image)
+                #     cv2.resizeWindow(title, int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) * 0.5), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) * 0.5))
 
-                key = cv2.waitKey(1)
-                    
-                # 'c'apture
-                if key == 99 or key == 67:
-                    break
-                # 's'ave
-                elif key == 115 or key == 83:
-                    cv2.IMREAD_UNCHANGED
-                    cv2.imwrite('image.jpg', image)
-                    break
+                    key = cv2.waitKey(1)
+                        
+                    # 'c'apture
+                    if key == 99 or key == 67:
+                        break
+                    # 's'ave
+                    elif key == 115 or key == 83:
+                        cv2.IMREAD_UNCHANGED
+                        cv2.imwrite('image.jpg', image)
+                        break
+                # else:
+                #     print('There are no digit area')
         cv2.destroyAllWindows()
         capture.release()
     else:
